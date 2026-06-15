@@ -1,0 +1,15 @@
+.git
+.github
+.gocache
+.gopath
+.modcache
+data
+dist
+bin
+*.test
+clash-server
+clash-server.exe
+src.exe
+src/clash-server
+src/clash-server.exe
+src/static/dashboard

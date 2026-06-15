@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clash Server</title>
+  <link href="/ui/static/bootstrap.min.css?v=20260615-2" rel="stylesheet">
+  <style>
+    [v-cloak] {
+      display: none;
+    }
+
+    body {
+      min-height: 100vh;
+      background: #f8f9fa;
+    }
+
+    .app-shell {
+      max-width: 1120px;
+    }
+
+    .status-dot {
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .topbar-actions .btn {
+      white-space: nowrap;
+    }
+
+    .tabs-bar {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    .tabs-bar .nav-link {
+      font-weight: 500;
+    }
+
+    .tab-card {
+      border-top: 0;
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
+    }
+
+    .proxy-list {
+      max-height: 10rem;
+      overflow: auto;
+    }
+
+    .table > :not(caption) > * > * {
+      padding: 1rem 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <nav class="navbar navbar-expand-lg bg-white border-bottom">
+      <div class="container app-shell">
+        <div class="d-flex align-items-center gap-3">
+          <span class="navbar-brand fw-bold mb-0">Clash Server</span>
+          <span class="badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-2">
+            <span class="status-dot" :class="coreRunning ? 'bg-success' : 'bg-secondary'"></span>
+            {{ coreRunning ? '运行中' : '已停止' }}
+          </span>
+        </div>
+
+        <div class="topbar-actions d-flex flex-column flex-sm-row gap-2 mt-3 mt-lg-0">
+          <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="loading" @click="openDashboard">
+            Dashboard
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="loading" @click="loadConfig">
+            刷新状态
+          </button>
+          <button class="btn btn-sm" :class="coreRunning ? 'btn-danger' : 'btn-success'" type="button" :disabled="loading || togglingCore" @click="toggleCore">
+            <span v-if="togglingCore" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+            {{ togglingCore ? '处理中' : (coreRunning ? '停止' : '启动') }}
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="container app-shell py-4">
+
+    <div v-if="subscriptionError" class="alert alert-danger mb-4" role="alert">
+      {{ subscriptionError }}
+    </div>
+
+    <div v-if="loading" class="card border-0 shadow-sm">
+      <div class="card-body p-5 text-center text-secondary">
+        <div class="spinner-border mb-3" aria-hidden="true"></div>
+        <div>正在加载配置...</div>
+      </div>
+    </div>
+
+    <template v-else>
+      <div class="tabs-bar bg-white border rounded-top p-2">
+        <ul class="nav nav-pills gap-1" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" :class="{ active: activeTab === 'config' }" type="button" role="tab" @click="activeTab = 'config'">配置</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" :class="{ active: activeTab === 'groups' }" type="button" role="tab" @click="activeTab = 'groups'">代理组</button>
+        </li>
+        </ul>
+      </div>
+
+      <section class="card tab-card">
+        <form v-show="activeTab === 'config'" role="tabpanel" @submit.prevent="saveConfig">
+          <div class="card-body p-4">
+            <div class="mb-3">
+              <label class="form-label" for="subscription_url">订阅地址</label>
+              <input class="form-control" id="subscription_url" v-model.trim="form.subscription_url" type="url" placeholder="https://example.com/sub.yaml">
+            </div>
+
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="mixed_port">Mixed 端口</label>
+                <input class="form-control" id="mixed_port" v-model.number="form.mixed_port" type="number" min="1" max="65535" required>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="http_port">HTTP 端口</label>
+                <input class="form-control" id="http_port" v-model.number="form.http_port" type="number" min="1" max="65535" required>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="socks5_port">SOCKS5 端口</label>
+                <input class="form-control" id="socks5_port" v-model.number="form.socks5_port" type="number" min="1" max="65535" required>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="update_interval_minutes">定时更新间隔（分钟）</label>
+                <input class="form-control" id="update_interval_minutes" v-model.number="form.update_interval_minutes" type="number" min="1" required>
+              </div>
+            </div>
+
+            <hr class="my-4">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="mode">模式</label>
+                <select class="form-select" id="mode" v-model="form.mode" required>
+                  <option value="rule">Rule</option>
+                  <option value="global">Global</option>
+                  <option value="direct">Direct</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="log_level">日志级别</label>
+                <select class="form-select" id="log_level" v-model="form.log_level" required>
+                  <option value="silent">Silent</option>
+                  <option value="error">Error</option>
+                  <option value="warning">Warning</option>
+                  <option value="info">Info</option>
+                  <option value="debug">Debug</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="geo_update_interval">Geo 更新间隔（小时）</label>
+                <input class="form-control" id="geo_update_interval" v-model.number="form.geo_update_interval" type="number" min="1" required>
+              </div>
+              <div class="col-12 col-md-6 d-flex align-items-end">
+                <div class="form-check form-switch mb-2">
+                  <input class="form-check-input" id="ipv6" v-model="form.ipv6" type="checkbox" role="switch">
+                  <label class="form-check-label" for="ipv6">IPv6</label>
+                </div>
+              </div>
+            </div>
+
+            <hr class="my-4">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="last_updated_at">上次更新时间</label>
+                <input class="form-control" id="last_updated_at" :value="config.last_updated_at || '尚未更新'" type="text" disabled>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="clash_version">Clash 版本号</label>
+                <input class="form-control" id="clash_version" :value="clashVersion || '-'" type="text" disabled>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-footer bg-white d-flex flex-column flex-sm-row align-items-sm-center justify-content-end gap-2">
+            <span v-if="statusMessage" class="small text-secondary me-sm-auto">{{ statusMessage }}</span>
+            <button class="btn btn-outline-primary" type="button" :disabled="refreshing || saving" @click="refreshSubscription">
+              <span v-if="refreshing" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+              {{ refreshing ? '更新中' : '更新订阅' }}
+            </button>
+            <button class="btn btn-primary px-4" type="submit" :disabled="saving || refreshing">
+              <span v-if="saving" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+              {{ saving ? '保存中' : '保存' }}
+            </button>
+          </div>
+        </form>
+
+        <div v-show="activeTab === 'groups'" class="card-body p-4" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h2 class="h5 mb-0">代理组</h2>
+              <button class="btn btn-sm btn-outline-secondary" type="button" :disabled="loadingGroups" @click="loadProxyGroups">
+                <span v-if="loadingGroups" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+                重新加载
+              </button>
+            </div>
+
+            <div v-if="proxyGroups.length" class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">名称</th>
+                    <th scope="col">类型</th>
+                    <th scope="col">节点数量</th>
+                    <th scope="col">Provider</th>
+                    <th scope="col">节点</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="group in proxyGroups" :key="group.name">
+                    <td class="fw-semibold">{{ group.name }}</td>
+                    <td><span class="badge text-bg-secondary">{{ group.type || '-' }}</span></td>
+                    <td>{{ (group.proxies || []).length }}</td>
+                    <td>
+                      <template v-if="group.use && group.use.length">
+                        <span v-for="provider in group.use" :key="provider" class="badge text-bg-light border me-1">{{ provider }}</span>
+                      </template>
+                      <span v-else class="text-secondary">-</span>
+                    </td>
+                    <td>
+                      <div v-if="group.proxies && group.proxies.length" class="proxy-list small text-secondary">
+                        <span v-for="proxy in group.proxies" :key="proxy" class="badge text-bg-light border me-1 mb-1">{{ proxy }}</span>
+                      </div>
+                      <span v-else class="text-secondary">-</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div v-else class="alert alert-secondary mb-0" role="alert">
+              当前 profile.yml 中没有读取到代理组。保存有效订阅或点击刷新订阅后再查看。
+            </div>
+          </div>
+      </section>
+    </template>
+    </main>
+  </div>
+
+  <script src="/ui/static/vue.global.min.js?v=20260615-2"></script>
+  <script>
+    const { createApp } = Vue;
+
+    createApp({
+      data() {
+        return {
+          loading: true,
+          saving: false,
+          refreshing: false,
+          togglingCore: false,
+          loadingGroups: false,
+          activeTab: 'config',
+          statusMessage: '',
+          subscriptionError: '',
+          coreRunning: false,
+          clashVersion: '',
+          saveRefreshTimer: null,
+          config: {
+            subscription_url: '',
+            mixed_port: 7890,
+            http_port: 7891,
+            socks5_port: 7892,
+            update_interval_minutes: 60,
+            mode: 'rule',
+            log_level: 'info',
+            geo_update_interval: 24,
+            ipv6: true,
+            last_updated_at: ''
+          },
+          form: {
+            subscription_url: '',
+            mixed_port: 7890,
+            http_port: 7891,
+            socks5_port: 7892,
+            update_interval_minutes: 60,
+            mode: 'rule',
+            log_level: 'info',
+            geo_update_interval: 24,
+            ipv6: true
+          },
+          proxyGroups: []
+        };
+      },
+
+      mounted() {
+        this.loadConfig();
+      },
+
+      beforeUnmount() {
+        if (this.saveRefreshTimer) {
+          clearTimeout(this.saveRefreshTimer);
+        }
+      },
+
+      methods: {
+        async requestJSON(url, options = {}) {
+          const response = await fetch(url, {
+            headers: {
+              Accept: 'application/json',
+              ...(options.body ? { 'Content-Type': 'application/json' } : {})
+            },
+            ...options
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data.message || '请求失败');
+          }
+          return data;
+        },
+
+        applyState(data) {
+          if (data.config) {
+            this.config = data.config;
+            this.form = {
+              subscription_url: data.config.subscription_url || '',
+              mixed_port: data.config.mixed_port,
+              http_port: data.config.http_port,
+              socks5_port: data.config.socks5_port,
+              update_interval_minutes: data.config.update_interval_minutes,
+              mode: data.config.mode || 'rule',
+              log_level: data.config.log_level || 'info',
+              geo_update_interval: data.config.geo_update_interval || 24,
+              ipv6: typeof data.config.ipv6 === 'boolean' ? data.config.ipv6 : true
+            };
+          }
+          if (typeof data.core_running === 'boolean') {
+            this.coreRunning = data.core_running;
+          }
+          if (typeof data.clash_version === 'string') {
+            this.clashVersion = data.clash_version;
+          }
+          if (Array.isArray(data.proxy_groups)) {
+            this.proxyGroups = data.proxy_groups;
+          }
+          this.subscriptionError = data.subscription_error || '';
+        },
+
+        async loadConfig(options = {}) {
+          const silent = Boolean(options.silent);
+          if (!silent) {
+            this.loading = true;
+          }
+          try {
+            const data = await this.requestJSON('/api/admin');
+            this.applyState(data);
+          } catch (error) {
+            this.statusMessage = error.message;
+          } finally {
+            if (!silent) {
+              this.loading = false;
+            }
+          }
+        },
+
+        async saveConfig() {
+          this.saving = true;
+          this.statusMessage = '';
+          try {
+            const data = await this.requestJSON('/api/admin/config', {
+              method: 'POST',
+              body: JSON.stringify(this.form)
+            });
+            this.applyState(data);
+            this.statusMessage = '已保存，后台正在应用配置。';
+            if (this.saveRefreshTimer) {
+              clearTimeout(this.saveRefreshTimer);
+            }
+            this.saveRefreshTimer = setTimeout(() => {
+              this.saveRefreshTimer = null;
+              this.loadConfig({ silent: true });
+            }, 2000);
+          } catch (error) {
+            this.statusMessage = error.message;
+          } finally {
+            this.saving = false;
+          }
+        },
+
+        async refreshSubscription() {
+          this.refreshing = true;
+          this.statusMessage = '';
+          try {
+            await this.requestJSON('/api/admin/subscription/refresh', { method: 'POST' });
+            this.statusMessage = '订阅已刷新。';
+            await this.loadConfig();
+          } catch (error) {
+            this.statusMessage = error.message;
+            await this.loadConfig();
+          } finally {
+            this.refreshing = false;
+          }
+        },
+
+        async toggleCore() {
+          this.togglingCore = true;
+          this.statusMessage = '';
+          const url = this.coreRunning ? '/api/admin/core/stop' : '/api/admin/core/start';
+          try {
+            const data = await this.requestJSON(url, { method: 'POST' });
+            this.coreRunning = data.core_running;
+            this.subscriptionError = data.subscription_error || '';
+            this.statusMessage = data.message || '';
+          } catch (error) {
+            this.statusMessage = error.message;
+            await this.loadConfig();
+          } finally {
+            this.togglingCore = false;
+          }
+        },
+
+        async loadProxyGroups() {
+          this.loadingGroups = true;
+          try {
+            const data = await this.requestJSON('/api/admin/proxy-groups');
+            this.proxyGroups = data.proxy_groups || [];
+          } catch (error) {
+            this.statusMessage = error.message;
+          } finally {
+            this.loadingGroups = false;
+          }
+        },
+
+        openDashboard() {
+          const { protocol, hostname, port } = window.location;
+          const dashboardPort = port || (protocol === 'https:' ? '443' : '80');
+          const params = new URLSearchParams({
+            hostname,
+            port: dashboardPort,
+            secret: '',
+            theme: 'auto',
+            title: 'Clash Dashboard'
+          });
+          window.open(`/ui/dashboard/?${params.toString()}`, '_blank', 'noopener,noreferrer');
+        }
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

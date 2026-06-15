@@ -1,0 +1,13 @@
+.gopath/
+.modcache/
+.gocache/
+data/
+bin/
+dist/
+clash-server
+clash-server.exe
+src.exe
+src/clash-server
+src/clash-server.exe
+*.test
+src/static/dashboard
