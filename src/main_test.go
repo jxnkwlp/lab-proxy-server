@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -354,6 +355,8 @@ proxy-groups:
 }
 
 func TestAdminRoutesAndCoreProxyRouting(t *testing.T) {
+	ensureDashboardIndexForTest(t)
+
 	app := newTestApp(t)
 	app.coreProxy = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Core-Proxy", "1")
@@ -435,6 +438,41 @@ func TestAdminRoutesAndCoreProxyRouting(t *testing.T) {
 			t.Fatalf("%s routed incorrectly: status=%d body=%q core=%q", path, rec.Code, rec.Body.String(), rec.Header().Get("X-Core-Proxy"))
 		}
 	}
+}
+
+func ensureDashboardIndexForTest(t *testing.T) {
+	t.Helper()
+
+	dir := filepath.Join("src", "static", "dashboard")
+	for _, candidate := range []string{
+		filepath.Join("static", "dashboard"),
+		filepath.Join("src", "static", "dashboard"),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			dir = candidate
+			break
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("stat dashboard directory: %v", err)
+		}
+	}
+
+	indexPath := filepath.Join(dir, "index.html")
+	if _, err := os.Stat(indexPath); err == nil {
+		return
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat dashboard index: %v", err)
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create dashboard test directory: %v", err)
+	}
+	if err := os.WriteFile(indexPath, []byte("<!doctype html><title>Test Dashboard</title>"), 0o644); err != nil {
+		t.Fatalf("create dashboard test index: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(indexPath)
+		_ = os.Remove(dir)
+	})
 }
 
 func newTestApp(t *testing.T) *App {
