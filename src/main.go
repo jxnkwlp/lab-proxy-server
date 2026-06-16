@@ -914,7 +914,7 @@ func DownloadWithRetry(ctx context.Context, url string, retries int, delay time.
 		if err != nil {
 			return nil, attempt, err
 		}
-		req.Header.Set("User-Agent", "clash-server/1.0")
+		req.Header.Set("User-Agent", "clash-verge/2.0")
 
 		resp, err := client.Do(req)
 		if err == nil {
