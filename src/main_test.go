@@ -566,6 +566,15 @@ func TestAdminRoutesAndCoreProxyRouting(t *testing.T) {
 			t.Fatalf("%s routed incorrectly: status=%d body=%q core=%q", path, rec.Code, rec.Body.String(), rec.Header().Get("X-Core-Proxy"))
 		}
 	}
+
+	for _, path := range []string{"/upgrade", "/upgrade/?channel=stable&force=true", "/upgrade/ui", "/upgrade/geo", "/restart", "/restart/"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden || rec.Header().Get("X-Core-Proxy") != "" {
+			t.Fatalf("%s should block core management action: status=%d body=%q core=%q", path, rec.Code, rec.Body.String(), rec.Header().Get("X-Core-Proxy"))
+		}
+	}
 }
 
 func ensureDashboardIndexForTest(t *testing.T) {

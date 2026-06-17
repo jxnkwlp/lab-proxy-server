@@ -14,6 +14,7 @@ RUN go mod download
 
 COPY src ./src
 
+# Populate dashboard before go build so //go:embed static includes it.
 RUN set -eux; \
     curl -fsSL "https://github.com/MetaCubeX/yacd/archive/gh-pages.zip" -o /tmp/dashboard.zip; \
     rm -rf /tmp/dashboard src/static/dashboard; \

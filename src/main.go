@@ -36,7 +36,7 @@ const (
 	mihomoModulePath            = "github.com/metacubex/mihomo"
 )
 
-//go:embed static/index.html static/bootstrap.min.css static/vue.global.min.js
+//go:embed static
 var assetFS embed.FS
 
 type AppConfig struct {
@@ -271,7 +271,7 @@ func (a *App) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/core/stop", a.HandleAPIStopCore)
 	mux.HandleFunc("/api/admin/core/restart", a.HandleAPIRestartCore)
 	mux.Handle("/ui/static/", http.StripPrefix("/ui/static/", http.FileServer(http.FS(staticFS))))
-	mux.Handle("/ui/dashboard/", http.StripPrefix("/ui/dashboard/", http.FileServer(http.Dir(DashboardStaticDir()))))
+	mux.Handle("/ui/dashboard/", http.StripPrefix("/ui/dashboard/", http.FileServer(DashboardStaticFS())))
 	mux.HandleFunc("/ui/dashboard", redirectTo("/ui/dashboard/"))
 	mux.HandleFunc("/ui", redirectTo("/ui/"))
 	mux.HandleFunc("/ui/", func(w http.ResponseWriter, r *http.Request) {
@@ -296,6 +296,14 @@ func redirectTo(path string) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
+func DashboardStaticFS() http.FileSystem {
+	dashboardFS, err := fs.Sub(assetFS, "static/dashboard")
+	if err == nil {
+		return http.FS(dashboardFS)
+	}
+	return http.Dir(DashboardStaticDir())
+}
+
 func DashboardStaticDir() string {
 	for _, dir := range []string{
 		filepath.Join("static", "dashboard"),
@@ -309,10 +317,33 @@ func DashboardStaticDir() string {
 }
 
 func (a *App) coreProxyHandler() http.Handler {
+	var proxy http.Handler
 	if a.coreProxy != nil {
-		return a.coreProxy
+		proxy = a.coreProxy
+	} else {
+		proxy = NewCoreProxyHandler(filepath.Join(a.dataDir, coreControllerSocketRelPath))
 	}
-	return NewCoreProxyHandler(filepath.Join(a.dataDir, coreControllerSocketRelPath))
+	return blockDisabledCoreManagement(proxy)
+}
+
+func blockDisabledCoreManagement(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isDisabledCoreManagementRequest(r) {
+			respondJSON(w, http.StatusForbidden, map[string]string{
+				"message": "core management action is disabled by the management server",
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isDisabledCoreManagementRequest(r *http.Request) bool {
+	return hasPathPrefix(r.URL.Path, "/upgrade") || hasPathPrefix(r.URL.Path, "/restart")
+}
+
+func hasPathPrefix(path, prefix string) bool {
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
 func NewCoreProxyHandler(socketPath string) http.Handler {
