@@ -15,16 +15,21 @@ RUN go mod download
 COPY src ./src
 
 RUN set -eux; \
-    curl -fsSL "https://codeload.github.com/MetaCubeX/Yacd-meta/zip/refs/heads/gh-pages" -o /tmp/dashboard.zip; \
+    curl -fsSL "https://github.com/MetaCubeX/yacd/archive/gh-pages.zip" -o /tmp/dashboard.zip; \
     rm -rf /tmp/dashboard src/static/dashboard; \
     mkdir -p /tmp/dashboard src/static/dashboard; \
     unzip -q /tmp/dashboard.zip -d /tmp/dashboard; \
-    dashboard_root="$(find /tmp/dashboard -type f -name index.html -exec dirname {} \; | head -n 1)"; \
+    dashboard_root="$(find /tmp/dashboard -mindepth 1 -maxdepth 1 -type d | head -n 1)"; \
     if [ -z "$dashboard_root" ]; then \
-      echo "Downloaded dashboard archive does not contain index.html" >&2; \
+      echo "Downloaded dashboard archive does not contain a dashboard directory" >&2; \
+      exit 1; \
+    fi; \
+    if [ ! -f "$dashboard_root/index.html" ]; then \
+      echo "Downloaded dashboard directory does not contain index.html" >&2; \
       exit 1; \
     fi; \
     cp -a "$dashboard_root"/. src/static/dashboard/
+    ls -lh src/static/dashboard/
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/clash-server ./src

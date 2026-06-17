@@ -118,15 +118,15 @@
             <div class="row g-3">
               <div class="col-12 col-md-6">
                 <label class="form-label" for="mixed_port">Mixed 端口</label>
-                <input class="form-control" id="mixed_port" v-model.number="form.mixed_port" type="number" min="1" max="65535" required>
+                <input class="form-control" id="mixed_port" v-model.number="form.mixed_port" type="number" min="0" max="65535" required>
               </div>
               <div class="col-12 col-md-6">
                 <label class="form-label" for="http_port">HTTP 端口</label>
-                <input class="form-control" id="http_port" v-model.number="form.http_port" type="number" min="1" max="65535" required>
+                <input class="form-control" id="http_port" v-model.number="form.http_port" type="number" min="0" max="65535" required>
               </div>
               <div class="col-12 col-md-6">
                 <label class="form-label" for="socks5_port">SOCKS5 端口</label>
-                <input class="form-control" id="socks5_port" v-model.number="form.socks5_port" type="number" min="1" max="65535" required>
+                <input class="form-control" id="socks5_port" v-model.number="form.socks5_port" type="number" min="0" max="65535" required>
               </div>
               <div class="col-12 col-md-6">
                 <label class="form-label" for="update_interval_minutes">定时更新间隔（分钟）</label>
@@ -156,7 +156,7 @@
               </div>
               <div class="col-12 col-md-6">
                 <label class="form-label" for="geo_update_interval">Geo 更新间隔（小时）</label>
-                <input class="form-control" id="geo_update_interval" v-model.number="form.geo_update_interval" type="number" min="1" required>
+                <input class="form-control" id="geo_update_interval" v-model.number="form.geo_update_interval" type="number" min="0" required>
               </div>
               <div class="col-12 col-md-6 d-flex align-items-end">
                 <div class="form-check form-switch mb-2">
@@ -325,7 +325,7 @@
               update_interval_minutes: data.config.update_interval_minutes,
               mode: data.config.mode || 'rule',
               log_level: data.config.log_level || 'info',
-              geo_update_interval: data.config.geo_update_interval || 24,
+              geo_update_interval: typeof data.config.geo_update_interval === 'number' ? data.config.geo_update_interval : 24,
               ipv6: typeof data.config.ipv6 === 'boolean' ? data.config.ipv6 : true
             };
           }

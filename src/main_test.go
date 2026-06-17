@@ -46,7 +46,7 @@ func TestNormalizeConfigDefaults(t *testing.T) {
 }
 
 func TestRenderRuntimeProfileOverridesManagedFields(t *testing.T) {
-	profile := []byte("mixed-port: 1111\nport: 2222\nsocks-port: 3333\nmode: direct\nlog-level: debug\ngeo-update-interval: 6\nipv6: true\nexternal-controller-tls: 0.0.0.0:9443\nexternal-ui: ui\nexternal-ui-url: https://example.com/ui.zip\nexternal-ui-name: zashboard\nsniffer:\n  enable: false\n  sniff:\n    TLS:\n      ports:\n        - 443\n    HTTP:\n      ports:\n        - 80\nproxies: []\nrules: []\n")
+	profile := []byte("mixed-port: 1111\nport: 2222\nsocks-port: 3333\nmode: direct\nlog-level: debug\ngeo-update-interval: 6\nipv6: true\nexternal-controller-tls: 0.0.0.0:9443\nexternal-ui: ui\nexternal-ui-url: https://example.com/ui.zip\nexternal-ui-name: zashboard\ndns:\n  enabled: true\n  nameserver:\n    - 1.1.1.1\nsniffer:\n  enable: false\n  sniff:\n    TLS:\n      ports:\n        - 443\n    HTTP:\n      ports:\n        - 80\nproxies: []\nrules: []\n")
 	rendered, err := RenderRuntimeProfile(profile, AppConfig{
 		MixedPort:         7890,
 		HTTPPort:          7891,
@@ -69,8 +69,8 @@ func TestRenderRuntimeProfileOverridesManagedFields(t *testing.T) {
 	assertNumber(t, raw, "port", 7891)
 	assertNumber(t, raw, "socks-port", 7892)
 	assertNumber(t, raw, "geo-update-interval", 24)
-	if raw["geo-auto-update"] != false {
-		t.Fatalf("mihomo geo auto update should be disabled for tool-managed scheduling: %v", raw["geo-auto-update"])
+	if raw["geo-auto-update"] != true {
+		t.Fatalf("mihomo geo auto update should be enabled when interval is non-zero: %v", raw["geo-auto-update"])
 	}
 	if raw["mode"] != "global" {
 		t.Fatalf("mode was not overridden: %v", raw["mode"])
@@ -86,6 +86,36 @@ func TestRenderRuntimeProfileOverridesManagedFields(t *testing.T) {
 	}
 	if raw["bind-address"] != "*" {
 		t.Fatalf("bind-address was not opened for LAN proxy use: %v", raw["bind-address"])
+	}
+	dns := assertMap(t, raw, "dns")
+	if dns["enabled"] != false {
+		t.Fatalf("dns was not disabled: %v", dns["enabled"])
+	}
+	if _, ok := dns["nameserver"]; !ok {
+		t.Fatalf("existing dns config was not preserved: %#v", dns)
+	}
+	if raw["unified-delay"] != true {
+		t.Fatalf("unified-delay was not enabled: %v", raw["unified-delay"])
+	}
+	if raw["tcp-concurrent"] != true {
+		t.Fatalf("tcp-concurrent was not enabled: %v", raw["tcp-concurrent"])
+	}
+	if raw["geodata-mode"] != true {
+		t.Fatalf("geodata-mode was not enabled: %v", raw["geodata-mode"])
+	}
+	if raw["geodata-loader"] != "memconservative" {
+		t.Fatalf("geodata-loader mismatch: %v", raw["geodata-loader"])
+	}
+	coreProfile := assertMap(t, raw, "profile")
+	if coreProfile["store-selected"] != true || coreProfile["store-fake-ip"] != true {
+		t.Fatalf("profile persistence config mismatch: %#v", coreProfile)
+	}
+	geoxURL := assertMap(t, raw, "geox-url")
+	if geoxURL["geoip"] != "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.db" ||
+		geoxURL["geosite"] != "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.db" ||
+		geoxURL["mmdb"] != "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" ||
+		geoxURL["asn"] != "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb" {
+		t.Fatalf("geox-url mismatch: %#v", geoxURL)
 	}
 	if _, ok := raw["external-controller"]; ok {
 		t.Fatalf("external controller should not be exposed on TCP: %v", raw["external-controller"])
@@ -122,6 +152,57 @@ func TestRenderRuntimeProfileOverridesManagedFields(t *testing.T) {
 	if _, ok := sniff["HTTP"]; !ok {
 		t.Fatalf("existing non-TLS sniffer config was not preserved: %#v", sniff)
 	}
+}
+
+func TestRenderRuntimeProfileDisablesGeoAutoUpdateWhenIntervalIsZero(t *testing.T) {
+	rendered, err := RenderRuntimeProfile([]byte("proxies: []\nrules: []\n"), AppConfig{
+		MixedPort:             7890,
+		HTTPPort:              7891,
+		SOCKS5Port:            7892,
+		UpdateIntervalMinutes: 60,
+		Mode:                  "rule",
+		LogLevel:              "info",
+		GeoUpdateInterval:     0,
+		IPv6:                  true,
+		ManagementPort:        9090,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw := map[string]any{}
+	if err := yaml.Unmarshal(rendered, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["geo-auto-update"] != false {
+		t.Fatalf("mihomo geo auto update should be disabled when interval is zero: %v", raw["geo-auto-update"])
+	}
+	assertNumber(t, raw, "geo-update-interval", 0)
+}
+
+func TestRenderRuntimeProfilePreservesZeroProxyPorts(t *testing.T) {
+	rendered, err := RenderRuntimeProfile([]byte("proxies: []\nrules: []\n"), AppConfig{
+		MixedPort:             0,
+		HTTPPort:              0,
+		SOCKS5Port:            0,
+		UpdateIntervalMinutes: 60,
+		Mode:                  "rule",
+		LogLevel:              "info",
+		GeoUpdateInterval:     24,
+		IPv6:                  true,
+		ManagementPort:        9090,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw := map[string]any{}
+	if err := yaml.Unmarshal(rendered, &raw); err != nil {
+		t.Fatal(err)
+	}
+	assertNumber(t, raw, "mixed-port", 0)
+	assertNumber(t, raw, "port", 0)
+	assertNumber(t, raw, "socks-port", 0)
 }
 
 func TestDownloadWithRetryRetriesTwice(t *testing.T) {
@@ -206,6 +287,23 @@ func TestGeoUpdateDurationUsesHours(t *testing.T) {
 	}
 }
 
+func TestGeoUpdateDurationZeroDisablesSchedule(t *testing.T) {
+	got := geoUpdateDuration(AppConfig{
+		MixedPort:             7890,
+		HTTPPort:              7891,
+		SOCKS5Port:            7892,
+		UpdateIntervalMinutes: 60,
+		Mode:                  "rule",
+		LogLevel:              "info",
+		GeoUpdateInterval:     0,
+		IPv6:                  true,
+		ManagementPort:        9090,
+	})
+	if got != 0 {
+		t.Fatalf("unexpected geo update duration: %v", got)
+	}
+}
+
 func TestRunSchedulerUpdatesGeoDatabasesOnConfiguredInterval(t *testing.T) {
 	app := newTestApp(t)
 	app.subInterval = func(AppConfig) time.Duration {
@@ -249,6 +347,32 @@ func TestConfigFromJSONAcceptsCoreFields(t *testing.T) {
 	}
 }
 
+func TestConfigFromJSONAcceptsZeroGeoUpdateInterval(t *testing.T) {
+	body := `{"subscription_url":"","mixed_port":7890,"http_port":7891,"socks5_port":7892,"update_interval_minutes":60,"mode":"rule","log_level":"info","geo_update_interval":0,"ipv6":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/config", strings.NewReader(body))
+
+	cfg, err := ConfigFromJSON(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GeoUpdateInterval != 0 {
+		t.Fatalf("unexpected geo update interval: %d", cfg.GeoUpdateInterval)
+	}
+}
+
+func TestConfigFromJSONAcceptsZeroProxyPorts(t *testing.T) {
+	body := `{"subscription_url":"","mixed_port":0,"http_port":0,"socks5_port":0,"update_interval_minutes":60,"mode":"rule","log_level":"info","geo_update_interval":24,"ipv6":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/config", strings.NewReader(body))
+
+	cfg, err := ConfigFromJSON(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MixedPort != 0 || cfg.HTTPPort != 0 || cfg.SOCKS5Port != 0 {
+		t.Fatalf("unexpected proxy ports: %+v", cfg)
+	}
+}
+
 func TestConfigFromJSONRejectsInvalidCoreFields(t *testing.T) {
 	cases := []struct {
 		name string
@@ -264,7 +388,11 @@ func TestConfigFromJSONRejectsInvalidCoreFields(t *testing.T) {
 		},
 		{
 			name: "geo update interval",
-			body: `{"subscription_url":"","mixed_port":7890,"http_port":7891,"socks5_port":7892,"update_interval_minutes":60,"mode":"rule","log_level":"info","geo_update_interval":0,"ipv6":true}`,
+			body: `{"subscription_url":"","mixed_port":7890,"http_port":7891,"socks5_port":7892,"update_interval_minutes":60,"mode":"rule","log_level":"info","geo_update_interval":-1,"ipv6":true}`,
+		},
+		{
+			name: "proxy port",
+			body: `{"subscription_url":"","mixed_port":-1,"http_port":7891,"socks5_port":7892,"update_interval_minutes":60,"mode":"rule","log_level":"info","geo_update_interval":24,"ipv6":true}`,
 		},
 	}
 

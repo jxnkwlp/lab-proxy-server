@@ -214,13 +214,22 @@ func NormalizeConfig(cfg AppConfig) AppConfig {
 }
 
 func normalizeConfig(cfg AppConfig, defaultIPv6 bool) AppConfig {
-	if cfg.MixedPort == 0 {
+	defaultEmptyConfig := cfg.MixedPort == 0 &&
+		cfg.HTTPPort == 0 &&
+		cfg.SOCKS5Port == 0 &&
+		cfg.UpdateIntervalMinutes == 0 &&
+		strings.TrimSpace(cfg.Mode) == "" &&
+		strings.TrimSpace(cfg.LogLevel) == "" &&
+		cfg.GeoUpdateInterval == 0 &&
+		cfg.ManagementPort == 0
+
+	if defaultEmptyConfig && cfg.MixedPort == 0 {
 		cfg.MixedPort = 7890
 	}
-	if cfg.HTTPPort == 0 {
+	if defaultEmptyConfig && cfg.HTTPPort == 0 {
 		cfg.HTTPPort = 7891
 	}
-	if cfg.SOCKS5Port == 0 {
+	if defaultEmptyConfig && cfg.SOCKS5Port == 0 {
 		cfg.SOCKS5Port = 7892
 	}
 	if cfg.UpdateIntervalMinutes <= 0 {
@@ -234,7 +243,7 @@ func normalizeConfig(cfg AppConfig, defaultIPv6 bool) AppConfig {
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
 	}
-	if cfg.GeoUpdateInterval <= 0 {
+	if cfg.GeoUpdateInterval < 0 || defaultEmptyConfig {
 		cfg.GeoUpdateInterval = 24
 	}
 	if defaultIPv6 && !cfg.IPv6 {
@@ -500,13 +509,13 @@ func ConfigFromForm(r *http.Request) (AppConfig, error) {
 	}
 
 	var err error
-	if cfg.MixedPort, err = parsePort(r.FormValue("mixed_port"), "Mixed port"); err != nil {
+	if cfg.MixedPort, err = parseProxyPort(r.FormValue("mixed_port"), "Mixed port"); err != nil {
 		return cfg, err
 	}
-	if cfg.HTTPPort, err = parsePort(r.FormValue("http_port"), "HTTP port"); err != nil {
+	if cfg.HTTPPort, err = parseProxyPort(r.FormValue("http_port"), "HTTP port"); err != nil {
 		return cfg, err
 	}
-	if cfg.SOCKS5Port, err = parsePort(r.FormValue("socks5_port"), "SOCKS5 port"); err != nil {
+	if cfg.SOCKS5Port, err = parseProxyPort(r.FormValue("socks5_port"), "SOCKS5 port"); err != nil {
 		return cfg, err
 	}
 
@@ -517,8 +526,8 @@ func ConfigFromForm(r *http.Request) (AppConfig, error) {
 	cfg.Mode = r.FormValue("mode")
 	cfg.LogLevel = r.FormValue("log_level")
 	cfg.GeoUpdateInterval, err = strconv.Atoi(strings.TrimSpace(r.FormValue("geo_update_interval")))
-	if err != nil || cfg.GeoUpdateInterval <= 0 {
-		return cfg, fmt.Errorf("geo update interval must be a positive number of hours")
+	if err != nil || cfg.GeoUpdateInterval < 0 {
+		return cfg, fmt.Errorf("geo update interval must be zero or a positive number of hours")
 	}
 	cfg.IPv6 = r.FormValue("ipv6") == "true" || r.FormValue("ipv6") == "on"
 
@@ -545,20 +554,20 @@ func ConfigFromJSON(r *http.Request) (AppConfig, error) {
 	}
 
 	cfg.SubscriptionURL = strings.TrimSpace(cfg.SubscriptionURL)
-	if _, err := validatePort(cfg.MixedPort, "Mixed port"); err != nil {
+	if _, err := validateProxyPort(cfg.MixedPort, "Mixed port"); err != nil {
 		return cfg, err
 	}
-	if _, err := validatePort(cfg.HTTPPort, "HTTP port"); err != nil {
+	if _, err := validateProxyPort(cfg.HTTPPort, "HTTP port"); err != nil {
 		return cfg, err
 	}
-	if _, err := validatePort(cfg.SOCKS5Port, "SOCKS5 port"); err != nil {
+	if _, err := validateProxyPort(cfg.SOCKS5Port, "SOCKS5 port"); err != nil {
 		return cfg, err
 	}
 	if cfg.UpdateIntervalMinutes <= 0 {
 		return cfg, fmt.Errorf("update interval must be a positive number of minutes")
 	}
-	if _, ok := fields["geo_update_interval"]; ok && cfg.GeoUpdateInterval <= 0 {
-		return cfg, fmt.Errorf("geo update interval must be a positive number of hours")
+	if _, ok := fields["geo_update_interval"]; ok && cfg.GeoUpdateInterval < 0 {
+		return cfg, fmt.Errorf("geo update interval must be zero or a positive number of hours")
 	}
 	if cfg.ManagementPort != 0 {
 		if _, err := validatePort(cfg.ManagementPort, "Management port"); err != nil {
@@ -615,6 +624,14 @@ func parsePort(raw, name string) (int, error) {
 	return port, nil
 }
 
+func parseProxyPort(raw, name string) (int, error) {
+	port, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || port < 0 || port > 65535 {
+		return 0, fmt.Errorf("%s must be between 0 and 65535", name)
+	}
+	return port, nil
+}
+
 func validatePort(port int, name string) (int, error) {
 	if port < 1 || port > 65535 {
 		return 0, fmt.Errorf("%s must be between 1 and 65535", name)
@@ -622,15 +639,31 @@ func validatePort(port int, name string) (int, error) {
 	return port, nil
 }
 
+func validateProxyPort(port int, name string) (int, error) {
+	if port < 0 || port > 65535 {
+		return 0, fmt.Errorf("%s must be between 0 and 65535", name)
+	}
+	return port, nil
+}
+
 func validateCoreConfig(cfg AppConfig) error {
+	if _, err := validateProxyPort(cfg.MixedPort, "Mixed port"); err != nil {
+		return err
+	}
+	if _, err := validateProxyPort(cfg.HTTPPort, "HTTP port"); err != nil {
+		return err
+	}
+	if _, err := validateProxyPort(cfg.SOCKS5Port, "SOCKS5 port"); err != nil {
+		return err
+	}
 	if !isAllowedValue(cfg.Mode, []string{"rule", "global", "direct"}) {
 		return fmt.Errorf("mode must be one of: rule, global, direct")
 	}
 	if !isAllowedValue(cfg.LogLevel, []string{"silent", "error", "warning", "info", "debug"}) {
 		return fmt.Errorf("log level must be one of: silent, error, warning, info, debug")
 	}
-	if cfg.GeoUpdateInterval <= 0 {
-		return fmt.Errorf("geo update interval must be a positive number of hours")
+	if cfg.GeoUpdateInterval < 0 {
+		return fmt.Errorf("geo update interval must be zero or a positive number of hours")
 	}
 	return nil
 }
@@ -696,9 +729,32 @@ func (a *App) UpdateGeoDatabases() error {
 func (a *App) RunScheduler(ctx context.Context) {
 	cfg := a.CurrentConfig()
 	subscriptionTimer := time.NewTimer(a.subscriptionUpdateDuration(cfg))
-	geoTimer := time.NewTimer(a.geoUpdateDuration(cfg))
+	var geoTimer *time.Timer
+	var geoTimerC <-chan time.Time
+	resetGeoSchedule := func(cfg AppConfig) {
+		duration := a.geoUpdateDuration(cfg)
+		if duration <= 0 {
+			if geoTimer != nil {
+				geoTimer.Stop()
+				geoTimer = nil
+				geoTimerC = nil
+			}
+			return
+		}
+		if geoTimer == nil {
+			geoTimer = time.NewTimer(duration)
+			geoTimerC = geoTimer.C
+			return
+		}
+		resetTimer(geoTimer, duration)
+	}
+	resetGeoSchedule(cfg)
 	defer subscriptionTimer.Stop()
-	defer geoTimer.Stop()
+	defer func() {
+		if geoTimer != nil {
+			geoTimer.Stop()
+		}
+	}()
 
 	for {
 		select {
@@ -707,17 +763,17 @@ func (a *App) RunScheduler(ctx context.Context) {
 		case <-a.scheduleCh:
 			cfg := a.CurrentConfig()
 			resetTimer(subscriptionTimer, a.subscriptionUpdateDuration(cfg))
-			resetTimer(geoTimer, a.geoUpdateDuration(cfg))
+			resetGeoSchedule(cfg)
 		case <-subscriptionTimer.C:
 			if err := a.RefreshWithSubscription(ctx); err != nil {
 				a.SetAlert("subscription-error", fmt.Sprintf("subscription update failed: %v", err))
 			}
 			resetTimer(subscriptionTimer, a.subscriptionUpdateDuration(a.CurrentConfig()))
-		case <-geoTimer.C:
+		case <-geoTimerC:
 			if err := a.UpdateGeoDatabases(); err != nil {
 				a.SetAlert("geo-update-error", fmt.Sprintf("geo update failed: %v", err))
 			}
-			resetTimer(geoTimer, a.geoUpdateDuration(a.CurrentConfig()))
+			resetGeoSchedule(a.CurrentConfig())
 		}
 	}
 }
@@ -743,6 +799,9 @@ func subscriptionUpdateDuration(cfg AppConfig) time.Duration {
 
 func geoUpdateDuration(cfg AppConfig) time.Duration {
 	cfg = normalizeConfig(cfg, false)
+	if cfg.GeoUpdateInterval <= 0 {
+		return 0
+	}
 	return time.Duration(cfg.GeoUpdateInterval) * time.Hour
 }
 
@@ -870,9 +929,24 @@ func RenderRuntimeProfile(profile []byte, cfg AppConfig) ([]byte, error) {
 	raw["bind-address"] = "*"
 	raw["mode"] = cfg.Mode
 	raw["log-level"] = cfg.LogLevel
-	raw["geo-auto-update"] = false
+	raw["unified-delay"] = true
+	raw["tcp-concurrent"] = true
+	raw["profile"] = map[string]any{
+		"store-selected": true,
+		"store-fake-ip":  true,
+	}
+	raw["geodata-mode"] = true
+	raw["geodata-loader"] = "memconservative"
+	raw["geox-url"] = map[string]any{
+		"geoip":   "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.db",
+		"geosite": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.db",
+		"mmdb":    "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb",
+		"asn":     "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb",
+	}
+	raw["geo-auto-update"] = cfg.GeoUpdateInterval > 0
 	raw["geo-update-interval"] = cfg.GeoUpdateInterval
 	raw["ipv6"] = cfg.IPv6
+	disableDNS(raw)
 	ensureTLSSniffer(raw)
 	delete(raw, "external-controller")
 	delete(raw, "external-controller-tls")
@@ -883,6 +957,15 @@ func RenderRuntimeProfile(profile []byte, cfg AppConfig) ([]byte, error) {
 	delete(raw, "secret")
 
 	return yaml.Marshal(raw)
+}
+
+func disableDNS(raw map[string]any) {
+	dns, ok := raw["dns"].(map[string]any)
+	if !ok {
+		dns = map[string]any{}
+		raw["dns"] = dns
+	}
+	dns["enabled"] = false
 }
 
 func ensureTLSSniffer(raw map[string]any) {

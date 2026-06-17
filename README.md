@@ -51,21 +51,29 @@ The service creates `data/config.yml` on first start when the file does not alre
 | Setting                           | Default                       |
 | --------------------------------- | ----------------------------- |
 | Management UI and controller port | `9090`                        |
-| Mixed proxy port                  | `7890`                        |
-| HTTP proxy port                   | `7891`                        |
-| SOCKS5 proxy port                 | `7892`                        |
+| Mixed proxy port                  | `7890`, `0` disables it       |
+| HTTP proxy port                   | `7891`, `0` disables it       |
+| SOCKS5 proxy port                 | `7892`, `0` disables it       |
 | Subscription update interval      | `60` minutes                  |
 | Mode                              | `rule`                        |
 | Log level                         | `info`                        |
-| Geo database update interval      | `24` hours                    |
+| Geo database update interval      | `24` hours, `0` disables auto update |
 | IPv6                              | `true`                        |
 | Mihomo controller socket          | `data/mihomo-controller.sock` |
 
 The rendered runtime profile is normalized with these service-managed values:
 
 - `allow-lan: true`
-- `geo-auto-update: false`
+- `unified-delay: true`
+- `tcp-concurrent: true`
+- `profile.store-selected: true`
+- `profile.store-fake-ip: true`
+- `geodata-mode: true`
+- `geodata-loader: memconservative`
+- `geox-url` for MetaCubeX geoip, geosite, mmdb, and ASN databases
+- `geo-auto-update` from the Geo update interval (`false` when interval is `0`)
 - `geo-update-interval` from the service config
+- `dns.enabled: false`
 - `sniffer.enable: true`
 - `sniffer.override-destination: true`
 - TLS SNI sniffing enabled
@@ -96,7 +104,7 @@ The Docker build downloads the Yacd-meta dashboard automatically. For a local so
 Dashboard archive:
 
 ```text
-https://codeload.github.com/MetaCubeX/Yacd-meta/zip/refs/heads/gh-pages
+https://github.com/MetaCubeX/yacd/archive/gh-pages.zip
 ```
 
 ## Build
