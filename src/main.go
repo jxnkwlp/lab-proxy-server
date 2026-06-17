@@ -299,9 +299,18 @@ func redirectTo(path string) func(http.ResponseWriter, *http.Request) {
 func DashboardStaticFS() http.FileSystem {
 	dashboardFS, err := fs.Sub(assetFS, "static/dashboard")
 	if err == nil {
+		if _, err := fs.Stat(dashboardFS, "index.html"); err == nil {
+			return http.FS(dashboardFS)
+		}
+	}
+	dashboardDir := DashboardStaticDir()
+	if info, err := os.Stat(filepath.Join(dashboardDir, "index.html")); err == nil && !info.IsDir() {
+		return http.Dir(dashboardDir)
+	}
+	if err == nil {
 		return http.FS(dashboardFS)
 	}
-	return http.Dir(DashboardStaticDir())
+	return http.Dir(dashboardDir)
 }
 
 func DashboardStaticDir() string {
