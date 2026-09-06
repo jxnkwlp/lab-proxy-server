@@ -471,7 +471,7 @@ proxy-groups:
 	if got.Config.MixedPort != 7890 {
 		t.Fatalf("unexpected config: %+v", got.Config)
 	}
-	if got.ClashVersion != "1.19.27" {
+	if got.ClashVersion != MihomoLibraryVersion() {
 		t.Fatalf("unexpected clash version: %q", got.ClashVersion)
 	}
 	if got.SubscriptionError != "subscription update failed" {
