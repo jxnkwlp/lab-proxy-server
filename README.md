@@ -1,18 +1,18 @@
-# Clash Server
+# Lab Proxy Server
 
-Clash Server is a small Go service that embeds [mihomo](https://github.com/MetaCubeX/mihomo) and exposes a local management UI. It stores service settings, downloads a subscription profile, renders the runtime mihomo profile, and proxies compatible controller requests to the embedded core.
+A small Go service for self-hosted lab networking: it embeds a [mihomo](https://github.com/MetaCubeX/mihomo) core, pulls a subscription profile, and exposes a local management UI so you can run HTTP / SOCKS5 / mixed proxy ports on your own machine or NAS.
 
 ## Features
 
 - Local management UI on port `9090` by default.
 - Configurable subscription URL, proxy ports, update interval, mode, log level, Geo database update interval, IPv6, and management port.
 - Runtime config stored in `data/config.yml`.
-- Downloaded and rendered mihomo profile stored in `data/profile.yml`.
-- Immediate mihomo refresh after saving config.
+- Downloaded and rendered core profile stored in `data/profile.yml`.
+- Immediate core refresh after saving config.
 - Manual subscription refresh from the UI or API.
 - Subscription download retry with 2 attempts and a 10 second delay.
 - Service-managed Geo database updates.
-- Embedded mihomo controller access through the management port.
+- Embedded core controller access through the management port.
 - Optional dashboard UI served from `src/static/dashboard` or `static/dashboard`.
 
 ## Requirements
@@ -59,7 +59,7 @@ The service creates `data/config.yml` on first start when the file does not alre
 | Log level                         | `info`                        |
 | Geo database update interval      | `24` hours, `0` disables auto update |
 | IPv6                              | `true`                        |
-| Mihomo controller socket          | `data/mihomo-controller.sock` |
+| Core controller socket            | `data/mihomo-controller.sock` |
 
 The rendered runtime profile is normalized with these service-managed values:
 
@@ -85,14 +85,14 @@ The rendered runtime profile is normalized with these service-managed values:
 | `/ui/`                                 | Management UI                                         |
 | `/ui/dashboard/`                       | Dashboard UI, when dashboard static files are present |
 | `GET /api/admin`                       | Read service config and runtime status                |
-| `POST /api/admin/config`               | Save service config and refresh mihomo                |
+| `POST /api/admin/config`               | Save service config and refresh the core              |
 | `GET /api/admin/proxy-groups`          | Read proxy groups from the rendered profile           |
 | `POST /api/admin/subscription/refresh` | Refresh the subscription immediately                  |
-| `POST /api/admin/core/start`           | Start the embedded mihomo core                        |
-| `POST /api/admin/core/stop`            | Stop the embedded mihomo core                         |
-| `POST /api/admin/core/restart`         | Restart the embedded mihomo core                      |
+| `POST /api/admin/core/start`           | Start the embedded core                               |
+| `POST /api/admin/core/stop`            | Stop the embedded core                                |
+| `POST /api/admin/core/restart`         | Restart the embedded core                             |
 
-Other paths, such as `/proxies`, `/configs`, and `/traffic`, are forwarded to the embedded mihomo controller.
+Other paths, such as `/proxies`, `/configs`, and `/traffic`, are forwarded to the embedded core controller.
 
 ## Dashboard Assets
 
@@ -128,7 +128,7 @@ $env:GOPROXY = 'https://goproxy.cn,direct'
 $env:GOMODCACHE = "$PWD\.modcache"
 $env:GOPATH = "$PWD\.gopath"
 $env:GOCACHE = "$PWD\.gocache"
-go build -o .\dist\clash-server.exe ./src
+go build -o .\dist\lab-proxy-server.exe ./src
 ```
 
 ## Test
@@ -146,11 +146,11 @@ go test ./...
 Build the image:
 
 ```powershell
-docker build -t clash-server .
+docker build -t lab-proxy-server .
 ```
 
 Run it with a persistent data directory:
 
 ```powershell
-docker run --rm -p 9090:9090 -p 7890:7890 -p 7891:7891 -p 7892:7892 -v ${PWD}\data:/app/data clash-server
+docker run --rm -p 9090:9090 -p 7890:7890 -p 7891:7891 -p 7892:7892 -v ${PWD}\data:/app/data lab-proxy-server
 ```
